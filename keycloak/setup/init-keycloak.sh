@@ -474,16 +474,35 @@ create_users() {
         ]
     }'
 
-    curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/users" \
-        -H "Authorization: Bearer ${token}" \
-        -H "Content-Type: application/json" \
-        -d "$admin_user_json" > /dev/null
+    # Check if admin user already exists (idempotency)
+    local existing_admin=$(curl -s -H "Authorization: Bearer ${token}" \
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/users?username=${admin_username}&exact=true" | \
+        jq -r '.[0].id // empty')
+
+    if [ -n "$existing_admin" ]; then
+        echo -e "${YELLOW}Admin user already exists with ID: ${existing_admin}. Skipping creation.${NC}"
+    else
+        local response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/users" \
+            -H "Authorization: Bearer ${token}" \
+            -H "Content-Type: application/json" \
+            -d "$admin_user_json")
+
+        if [ "$response" = "201" ]; then
+            echo -e "${GREEN}Admin user created successfully${NC}"
+        elif [ "$response" = "409" ]; then
+            echo -e "${YELLOW}Admin user already exists (race condition detected)${NC}"
+        else
+            echo -e "${RED}Failed to create admin user. HTTP status: ${response}${NC}"
+            return 1
+        fi
+    fi
 
     echo "Assigning users to groups..."
 
-    # Get user IDs
+    # Get user IDs (exact=true: a plain search also matches e.g. "admin-user")
     local admin_user_id=$(curl -s -H "Authorization: Bearer ${token}" \
-        "${KEYCLOAK_URL}/admin/realms/${REALM}/users?username=$admin_username" | \
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/users?username=$admin_username&exact=true" | \
         jq -r '.[0].id')
 
     # Get the group IDs the admin user needs

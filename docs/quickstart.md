@@ -336,6 +336,10 @@ Login with:
 - **Username**: `admin` (or any user created in Step 6)
 - **Password**: The `KEYCLOAK_ADMIN_PASSWORD` you set in Step 3
 
+On the first login as `admin`, Keycloak asks you to choose a new password (the
+initial one is temporary). After you set it, you land on the registry dashboard.
+See [Troubleshooting Installation](troubleshooting-installation.md) if the login fails.
+
 ---
 
 ## Step 10: Register Example Servers and Agents (Optional)

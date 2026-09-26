@@ -78,9 +78,19 @@ chmod +x ./cli/bootstrap_user_and_m2m_setup.sh
 open http://localhost  # macOS
 # xdg-open http://localhost  # Linux
 # Login: admin / <KEYCLOAK_ADMIN_PASSWORD>
+# On first login Keycloak asks you to set a new admin password
 ```
 
 For the complete step-by-step guide with detailed explanations, see the [Quick Start Guide](quickstart.md).
+
+### Admin User First Login
+
+`init-keycloak.sh` creates the realm `admin` user with `INITIAL_ADMIN_PASSWORD` as a
+**temporary** password. On the first login through the web UI, Keycloak shows an
+"Update password" page; set a new password and you are taken to the registry.
+Until that is done, the admin account cannot obtain tokens through the API
+(the token endpoint returns `Account is not fully set up`). If you run into
+login problems, see [Troubleshooting Installation](troubleshooting-installation.md).
 
 ### Podman Installation (Rootless Alternative)
 
@@ -159,6 +169,7 @@ KEYCLOAK_URL=http://localhost:18080 ./cli/bootstrap_user_and_m2m_setup.sh
 open http://localhost:8080  # macOS
 # xdg-open http://localhost:8080  # Linux
 # Login: admin / <KEYCLOAK_ADMIN_PASSWORD>
+# On first login Keycloak asks you to set a new admin password
 ```
 
 > **Note for Apple Silicon:** Don't use `--prebuilt` with Podman on ARM64. Use `./build_and_run.sh --podman` instead. See [Podman on Apple Silicon Guide](podman-apple-silicon.md).
