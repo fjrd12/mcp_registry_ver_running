@@ -672,7 +672,7 @@ services:
     # tunnel for remote access rather than exposing it to the network.
     ports:
       # Loopback-only: Grafana UI is a local-dev convenience, not a public surface.
-      - "${HOST_BIND_IP:-127.0.0.1}:3000:3000"
+      - "${HOST_BIND_IP:-127.0.0.1}:3500:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
       - GF_USERS_ALLOW_SIGN_UP=false

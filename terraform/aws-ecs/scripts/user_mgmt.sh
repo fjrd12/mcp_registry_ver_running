@@ -645,7 +645,7 @@ create_human_user() {
 
     # Check if user already exists
     EXISTING_USER=$(curl -s -H "Authorization: Bearer $TOKEN" \
-        "$ADMIN_URL/admin/realms/$REALM/users?username=$username" | \
+        "$ADMIN_URL/admin/realms/$REALM/users?username=$username&exact=true" | \
         jq -r '.[0].id // empty')
 
     if [ -n "$EXISTING_USER" ]; then
@@ -679,7 +679,7 @@ create_human_user() {
 
         # Get the user ID
         USER_ID=$(curl -s -H "Authorization: Bearer $TOKEN" \
-            "$ADMIN_URL/admin/realms/$REALM/users?username=$username" | \
+            "$ADMIN_URL/admin/realms/$REALM/users?username=$username&exact=true" | \
             jq -r '.[0].id')
 
         echo "User ID: $USER_ID"
@@ -747,7 +747,7 @@ delete_user() {
 
     # Find user
     USER_ID=$(curl -s -H "Authorization: Bearer $TOKEN" \
-        "$ADMIN_URL/admin/realms/$REALM/users?username=$username" | \
+        "$ADMIN_URL/admin/realms/$REALM/users?username=$username&exact=true" | \
         jq -r '.[0].id // empty')
 
     if [ -z "$USER_ID" ]; then

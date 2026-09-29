@@ -4,6 +4,9 @@
 # Then creates bot and human users in these groups
 
 set -e
+# pipefail: the create steps run `if user_mgmt.sh ... | tee`; without it the
+# if tests tee's status and reports failures as success.
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -279,10 +282,18 @@ _assign_mcp_gateway_to_registry_admins() {
 
     local service_account_name="service-account-mcp-gateway-m2m"
 
+    # Look the account up through its client: the /users search does not
+    # return service accounts, so a username lookup never finds it.
     echo "Looking up service account: $service_account_name"
-    local service_account_id=$(curl -s -H "Authorization: Bearer $TOKEN" \
-        "$ADMIN_URL/admin/realms/$REALM/users?username=$service_account_name" | \
+    local m2m_client_id=$(curl -s -H "Authorization: Bearer $TOKEN" \
+        "$ADMIN_URL/admin/realms/$REALM/clients?clientId=mcp-gateway-m2m" | \
         jq -r '.[0].id // empty')
+    local service_account_id=""
+    if [ -n "$m2m_client_id" ]; then
+        service_account_id=$(curl -s -H "Authorization: Bearer $TOKEN" \
+            "$ADMIN_URL/admin/realms/$REALM/clients/$m2m_client_id/service-account-user" | \
+            jq -r '.id // empty')
+    fi
 
     if [ -z "$service_account_id" ]; then
         _print_info "Service account '$service_account_name' not found in Keycloak. This may be expected if using external M2M setup."

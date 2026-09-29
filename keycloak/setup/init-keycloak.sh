@@ -349,93 +349,52 @@ setup_m2m_scopes() {
     echo -e "${GREEN}M2M client scopes configured successfully!${NC}"
 }
 
-# Function to create service account user for M2M client
-create_service_account_user() {
+# Function to set up the service account user for the M2M client
+setup_service_account_user() {
     local token=$1
-    local service_account_username="service-account-mcp-gateway-m2m"
 
-    echo "Creating service account user: $service_account_username"
+    echo "Setting up service account user for mcp-gateway-m2m..."
 
-    # Check if user already exists
-    local existing_user=$(curl -s -H "Authorization: Bearer ${token}" \
-        "${KEYCLOAK_URL}/admin/realms/${REALM}/users?username=$service_account_username" | \
+    # Keycloak creates the service account user itself when the client has
+    # serviceAccountsEnabled. Look it up through the client: the /users search
+    # does not return service accounts, so a username lookup always missed it,
+    # the create then 409'd, and the group assignments below were skipped.
+    local m2m_client_id=$(curl -s -H "Authorization: Bearer ${token}" \
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/clients?clientId=mcp-gateway-m2m" | \
         jq -r '.[0].id // empty')
-
-    if [ ! -z "$existing_user" ]; then
-        echo -e "${YELLOW}Service account user already exists with ID: $existing_user${NC}"
-        return 0
-    fi
-
-    # Create service account user
-    local user_json='{
-        "username": "'$service_account_username'",
-        "enabled": true,
-        "emailVerified": true,
-        "serviceAccountClientId": "mcp-gateway-m2m"
-    }'
-
-    local response=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/users" \
-        -H "Authorization: Bearer ${token}" \
-        -H "Content-Type: application/json" \
-        -d "$user_json")
-
-    if [ "$response" = "201" ]; then
-        echo -e "${GREEN}Service account user created successfully!${NC}"
-
-        # Get the newly created user ID
-        local user_id=$(curl -s -H "Authorization: Bearer ${token}" \
-            "${KEYCLOAK_URL}/admin/realms/${REALM}/users?username=$service_account_username" | \
-            jq -r '.[0].id')
-
-        echo "Created service account user with ID: $user_id"
-
-        # Assign user to mcp-servers-unrestricted group
-        local group_id=$(curl -s -H "Authorization: Bearer ${token}" \
-            "${KEYCLOAK_URL}/admin/realms/${REALM}/groups" | \
-            jq -r '.[] | select(.name=="mcp-servers-unrestricted") | .id')
-
-        if [ ! -z "$group_id" ] && [ "$group_id" != "null" ]; then
-            local group_response=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X PUT "${KEYCLOAK_URL}/admin/realms/${REALM}/users/$user_id/groups/$group_id" \
-                -H "Authorization: Bearer ${token}")
-
-            if [ "$group_response" = "204" ]; then
-                echo -e "${GREEN}Service account assigned to mcp-servers-unrestricted group!${NC}"
-            else
-                echo -e "${YELLOW}Warning: Could not assign service account to mcp-servers-unrestricted group (HTTP $group_response)${NC}"
-            fi
-        else
-            echo -e "${RED}Error: Could not find mcp-servers-unrestricted group${NC}"
-        fi
-
-        # Assign user to a2a-agent-admin group for A2A agent access
-        local a2a_group_id=$(curl -s -H "Authorization: Bearer ${token}" \
-            "${KEYCLOAK_URL}/admin/realms/${REALM}/groups" | \
-            jq -r '.[] | select(.name=="a2a-agent-admin") | .id')
-
-        if [ ! -z "$a2a_group_id" ] && [ "$a2a_group_id" != "null" ]; then
-            local a2a_response=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X PUT "${KEYCLOAK_URL}/admin/realms/${REALM}/users/$user_id/groups/$a2a_group_id" \
-                -H "Authorization: Bearer ${token}")
-
-            if [ "$a2a_response" = "204" ]; then
-                echo -e "${GREEN}Service account assigned to a2a-agent-admin group!${NC}"
-            else
-                echo -e "${YELLOW}Warning: Could not assign service account to a2a-agent-admin group (HTTP $a2a_response)${NC}"
-            fi
-        else
-            echo -e "${YELLOW}Warning: a2a-agent-admin group not found. Create it manually if A2A agent support is needed.${NC}"
-        fi
-
-        return 0
-    elif [ "$response" = "409" ]; then
-        echo -e "${YELLOW}Service account user already exists. Continuing...${NC}"
-        return 0
-    else
-        echo -e "${RED}Failed to create service account user. HTTP status: ${response}${NC}"
+    if [ -z "$m2m_client_id" ]; then
+        echo -e "${RED}Error: Could not find mcp-gateway-m2m client${NC}"
         return 1
     fi
+
+    local user_id=$(curl -s -H "Authorization: Bearer ${token}" \
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${m2m_client_id}/service-account-user" | \
+        jq -r '.id // empty')
+    if [ -z "$user_id" ]; then
+        echo -e "${RED}Error: mcp-gateway-m2m has no service account user (is serviceAccountsEnabled set?)${NC}"
+        return 1
+    fi
+    echo "Service account user ID: $user_id"
+
+    # Group membership PUTs are idempotent, so they run on every invocation.
+    local groups_json=$(curl -s -H "Authorization: Bearer ${token}" \
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/groups")
+    local group_name group_id group_response
+    for group_name in mcp-servers-unrestricted a2a-agent-admin; do
+        group_id=$(echo "$groups_json" | jq -r ".[] | select(.name==\"$group_name\") | .id")
+        if [ -z "$group_id" ]; then
+            echo -e "${YELLOW}Warning: $group_name group not found; service account not assigned to it${NC}"
+            continue
+        fi
+        group_response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X PUT "${KEYCLOAK_URL}/admin/realms/${REALM}/users/$user_id/groups/$group_id" \
+            -H "Authorization: Bearer ${token}")
+        if [ "$group_response" = "204" ]; then
+            echo -e "${GREEN}Service account assigned to $group_name group${NC}"
+        else
+            echo -e "${YELLOW}Warning: Could not assign service account to $group_name group (HTTP $group_response)${NC}"
+        fi
+    done
 }
 
 # Function to create the realm admin user
@@ -545,30 +504,34 @@ setup_client_secrets() {
         "${KEYCLOAK_URL}/admin/realms/${REALM}/clients?clientId=mcp-gateway-web" | \
         jq -r '.[0].id')
 
-    # Generate secret for web client
-    curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${web_client_id}/client-secret" \
-        -H "Authorization: Bearer ${token}" \
-        -H "Content-Type: application/json" > /dev/null
-
+    # Reuse the client's existing secret; regenerating it on every run would
+    # invalidate the value already copied into .env.
     local web_secret_response=$(curl -s "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${web_client_id}/client-secret" \
         -H "Authorization: Bearer ${token}")
     web_secret=$(echo "$web_secret_response" | jq -r '.value // empty')
+    if [ -z "$web_secret" ]; then
+        web_secret=$(curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${web_client_id}/client-secret" \
+            -H "Authorization: Bearer ${token}" \
+            -H "Content-Type: application/json" | jq -r '.value // empty')
+    fi
 
     # Get M2M client ID
     local m2m_client_id=$(curl -s -H "Authorization: Bearer ${token}" \
         "${KEYCLOAK_URL}/admin/realms/${REALM}/clients?clientId=mcp-gateway-m2m" | \
         jq -r '.[0].id')
 
-    # Generate secret for M2M client
-    curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${m2m_client_id}/client-secret" \
-        -H "Authorization: Bearer ${token}" \
-        -H "Content-Type: application/json" > /dev/null
-
+    # Reuse the client's existing secret; regenerating it on every run would
+    # invalidate the value already copied into .env.
     local m2m_secret_response=$(curl -s "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${m2m_client_id}/client-secret" \
         -H "Authorization: Bearer ${token}")
     m2m_secret=$(echo "$m2m_secret_response" | jq -r '.value // empty')
+    if [ -z "$m2m_secret" ]; then
+        m2m_secret=$(curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${m2m_client_id}/client-secret" \
+            -H "Authorization: Bearer ${token}" \
+            -H "Content-Type: application/json" | jq -r '.value // empty')
+    fi
 
-    echo -e "${GREEN}Client secrets generated!${NC}"
+    echo -e "${GREEN}Client secrets ready!${NC}"
     echo ""
     echo "=============================================="
     echo -e "${YELLOW}Client credentials have been created.${NC}"
@@ -971,7 +934,7 @@ main() {
         create_scopes "$TOKEN"
         create_groups "$TOKEN"
         create_users "$TOKEN"
-        create_service_account_user "$TOKEN"
+        setup_service_account_user "$TOKEN"
         setup_client_secrets "$TOKEN"
         setup_groups_mapper "$TOKEN"
         setup_m2m_scopes "$TOKEN"
